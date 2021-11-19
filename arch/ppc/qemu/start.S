@@ -25,6 +25,14 @@
 #define ILLEGAL_VECTOR( v )	.org __vectors + v ; vector__##v: bl trap_error ;
 #define VECTOR( v, dummystr )	.org __vectors + v ; vector__##v
 
+#define SPR_DMISS	976
+#define SPR_DCMP	977
+#define SPR_HASH1	978
+#define SPR_HASH2	979
+#define SPR_IMISS	980
+#define SPR_ICMP	981
+#define SPR_RPA		982
+
 #ifdef CONFIG_PPC_64BITSUPPORT
 
 /* We're trying to use the same code for the ppc32 and ppc64 handlers here.
@@ -329,9 +337,154 @@ ILLEGAL_VECTOR( 0xd00 )
 ILLEGAL_VECTOR( 0xe00 )
 ILLEGAL_VECTOR( 0xf00 )
 ILLEGAL_VECTOR( 0xf20 )
-ILLEGAL_VECTOR( 0x1000 )
-ILLEGAL_VECTOR( 0x1100 )
-ILLEGAL_VECTOR( 0x1200 )
+
+VECTOR( 0x1000, "IFTLB" ):
+	mfspr	r2, SPR_HASH1
+	li	r1, 8
+	mfctr	r0
+	mfspr	r3, SPR_ICMP
+	addi	r2, r2, -8
+0:	mtctr	r1
+1:	lwzu	r1, 8(r2)
+	cmp	cr0, r1, r3
+	bdnzf	eq, 1b
+	bne	2f
+	lwz	r1, 4(r2)
+	andi.	r3, r1, 8
+	bne	3f
+	mtctr	r0
+	mfspr	r0, SPR_IMISS
+	mfsrr1	r3
+	mtcrf	0x80, r3
+	mtspr	SPR_RPA, r1
+	ori	r1, r1, 0x100
+	srwi	r1, r1, 8
+	tlbli	r0
+	stb	r1, 6(r2)
+	mfsrr0	r0
+	rfi
+2:
+	andi.	r1, r3, 0x0040
+	bne	4f
+	mfspr	r2, SPR_HASH2
+	ori	r3, r3, 0x0040
+	addi	r1, 0, 8
+	addi	r2, r2, -8
+	b	0b
+3:
+	mfsrr1	r3
+	andi.	r2,r3,0xffff
+	addis	r2, r2, 0x0800
+	b	5f
+4:
+	mfsrr1	r3
+	andi.	r2,r3,0xffff
+	addis	r2, r2, 0x4000
+5:	mtctr	r0
+	mtsrr1	r2
+	mfmsr	r0
+	xoris	r0, r0, 0x02
+	mtcrf	0x80, r3
+	mtmsr	r0
+	b	real_isi
+
+VECTOR( 0x1100, "DLTLB" ):
+	mfspr	r2, SPR_HASH1
+	addi	r1, 0, 8
+	mfctr	r0
+	mfspr	r3, SPR_DCMP
+	addi	r2, r2, -8
+0:	mtctr	r1
+1:	lwzu	r1, 8(r2)
+	cmp	cr0, r1, r3
+	bdnzf	eq, 1b
+	bne	2f
+	lwz	r1, +4(r2)
+	mtctr	r0
+	mfspr	r0, SPR_DMISS
+	mfsrr1	r3
+	mtcrf	0x80, r3
+	mtspr	SPR_RPA, r1
+	ori	r1, r1, 0x100
+	srw	r1, r1, 8
+	tlbld	r0
+	stb	r1, +6(r2)
+	rfi
+2:
+	andi.	r1, r3, 0x0040
+	bne	7f
+	mfspr	r2, SPR_HASH2
+	ori	r3, r3, 0x0040
+	addi	r1, 0, 8
+	addi	r2, r2, -8
+	b	0b
+
+VECTOR( 0x1200, "DSTLB" ):
+	mfspr	r2, SPR_HASH1
+	addi	r1, 0, 8
+	mfctr	r0
+	mfspr	r3, SPR_DCMP
+	addi	r2, r2, -8
+0:	mtctr	r1
+1:	lwzu	r1, 8(r2)
+	cmp	cr0, r1, r3
+	bdnzf	eq, 1b
+	bne	3f
+	lwz	r1, +4(r2)
+	andi.	r3,r1,0x80
+	beq	4f
+2:	mtctr	r0
+	mfspr	r0, SPR_DMISS
+	mfsrr1	r3
+	mtcrf	0x80, r3
+	mtspr	SPR_RPA, r1
+	tlbld	r0
+	rfi
+3:
+	andi. r1, r3, 0x0040
+	bne	7f
+	mfspr	r2, SPR_HASH2
+	ori	r3, r3, 0x0040
+	addi	r1, 0, 8
+	addi	r2, r2, -8
+	b	0b
+4:
+	rlwinm.	r3,r1,30,0,1
+	bge-	5f
+	andi.	r3,r1,1
+	beq+	6f
+	b	8f
+5:	mfsrr1	r3
+	andis.	r3,r3,0x0008
+	beq	6f
+	b	8f
+6:	ori	r1, r1, 0x180
+	sth	r1, 6(r2)
+	b	2b
+7:
+	mfsrr1	r3
+	rlwinm	r1, r3, 9,6,6
+	addis	r1, r1, 0x4000
+	b	9f
+8:
+	mfsrr1	r3
+	rlwinm	r1, r3, 9,6,6
+	addis	r1, r1, 0x0800
+9:	mtctr	r0
+	andi.	r2, r3, 0xffff
+	mtsrr1	r2
+	mtdsisr	r1
+	mfspr	r1, SPR_DMISS
+	rlwinm.	r2,r2,0,31,31
+	beq	10f
+	xor	r1,r1,0x07
+10:	mtdar	r1
+	mfmsr	r0
+	xoris	r0, r0, 0x02
+	mtcrf	0x80, r3
+	mtmsr	r0
+	b	real_dsi
+
 ILLEGAL_VECTOR( 0x1300 )
 ILLEGAL_VECTOR( 0x1400 )
 ILLEGAL_VECTOR( 0x1500 )
