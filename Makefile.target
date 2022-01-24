@@ -30,6 +30,7 @@ CFLAGS+= -Wall -Wredundant-decls -Wshadow -Wpointer-arith
 CFLAGS+= -Wstrict-prototypes -Wmissing-declarations -Wundef -Wendif-labels
 CFLAGS+= -Wstrict-aliasing -Wwrite-strings -Wmissing-prototypes -Wnested-externs
 CFLAGS+= -Werror
+CFLAGS+= -Wno-array-bounds -Wno-stringop-overread -Wno-maybe-uninitialized -gdwarf-4
 # Flags for dependency generation
 CFLAGS+= -MMD -MP -MT $@ -MF '$(*D)/$(*F).d'
 INCLUDES := -I$(SRCDIR)/include -I$(SRCDIR)/kernel/include -I$(ODIR)/target/include

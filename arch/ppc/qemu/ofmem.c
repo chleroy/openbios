@@ -430,9 +430,6 @@ static int is_ppc64(void)
 {
 #ifdef __powerpc64__
     return 1;
-#elif defined(CONFIG_PPC_64BITSUPPORT)
-    unsigned int pvr = mfpvr();
-    return ((pvr >= 0x330000) && (pvr < 0x70330000));
 #else
     return 0;
 #endif
